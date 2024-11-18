@@ -1,5 +1,5 @@
 
-import sys
+import sys, re
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtCore import Qt
+
+from threading import Thread
 
 from rlbot.utils.maps import STANDARD_MAPS, GAME_MAP_TO_UPK
 from rlbot.flat import MatchSettings, Launcher, GameMode, MatchLength, BoostOption, MutatorSettings
@@ -39,6 +41,17 @@ BOOST_OPTIONS = {
     "Fast Recharge" : BoostOption.Rapid_Recharge,
     "No Boost" : BoostOption.No_Boost
 }
+
+class OutputRedirector:
+    def __init__(self, append_function):
+        self.append_function = append_function
+
+    def write(self, message):
+        if message.strip():
+            self.append_function(message)
+
+    def flush(self):
+        pass
 
 class GUI(QMainWindow):
     def __init__(self):
@@ -128,13 +141,18 @@ class GUI(QMainWindow):
         self.console_output.setFixedHeight(window_height - 50)
         self.console_output.move(window_width - 390, 50)
 
+        sys.stdout = OutputRedirector(self.append_to_console)
+        sys.stderr = OutputRedirector(self.append_to_console)
+
         self.selected_map = GAME_MAP_TO_UPK[STANDARD_MAPS[0]]
         self.selected_mode = GAME_MODES["Soccer"]
         self.selected_time = TIME_CONTROLS["5 Minutes"]
         self.selected_boost = BOOST_OPTIONS["Default"]
 
     def append_to_console(self, text):
-        self.console_output.append(text)
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        result = ansi_escape.sub('', text)
+        self.console_output.append(result)
 
     def start_match(self):
         print("Launching match...")
@@ -147,7 +165,9 @@ class GUI(QMainWindow):
                                        boost_option=self.selected_boost
                                     ),
                                     )
-        run_match(match_settings)
+        
+        thread = Thread(target = run_match, args = (match_settings, ))
+        thread.start()
 
     def map_select_change(self, text):
         self.selected_map = GAME_MAP_TO_UPK[text]
